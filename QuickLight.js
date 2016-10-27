@@ -164,7 +164,7 @@ var QuickLight = QuickLight || (function() {
 		}
 
 		// DEBUG: start fresh on torches each time
-		state.QuickLight.torches = {};
+		// state.QuickLight.torches = {};
 
 		// Set up the event listeners.
 		on("change:graphic:statusmarkers", onYellowMarker);
