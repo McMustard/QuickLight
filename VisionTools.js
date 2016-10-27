@@ -1,10 +1,10 @@
-var QuickLight = QuickLight || (function() {
+var VisionTools = VisionTools || (function() {
 	"use strict";
 
 	// Version Number
-	var this_version = 0.3;
+	var this_version = 0.4;
 	// Date: (Subtract 1 from the month component)
-	var this_lastUpdate = new Date(2016, 9, 23, 21, 55);
+	var this_lastUpdate = new Date(2016, 9, 26, 23, 48);
 	// Verbose (print messages)
 	var this_verbose = false;
 
@@ -12,7 +12,7 @@ var QuickLight = QuickLight || (function() {
 	function findTorch(token_o)
 	{
 		// Search for the object in the state object.
-		var torch = state.QuickLight.torches[token_o.id];
+		var torch = state.VisionTools.torches[token_o.id];
 		return torch;
 	};
 
@@ -20,7 +20,7 @@ var QuickLight = QuickLight || (function() {
 	function registerTorch(token_o, torch_o)
 	{
 		// If there is an existing torch entry, delete the old token.
-		var torch = state.QuickLight.torches[token_o.id];
+		var torch = state.VisionTools.torches[token_o.id];
 		if (torch) {
 			var oldTorch_o = getObj("graphic", torch.id);
 			log("registerTorch: removing old torch w ID: " + torch.id);
@@ -28,7 +28,7 @@ var QuickLight = QuickLight || (function() {
 		}
 
 		// Present or not, we're going to replace the entry.
-		state.QuickLight.torches[token_o.id] = {
+		state.VisionTools.torches[token_o.id] = {
 			// ID of the torch object
 			id : torch_o.id,
 			// ID of the torch's owner
@@ -48,15 +48,15 @@ var QuickLight = QuickLight || (function() {
 			var torch_o = getObj("graphic", torch.id);
 			torch_o.remove();
 		}
-		delete state.QuickLight.torches[token_o.id];
+		delete state.VisionTools.torches[token_o.id];
 	};
 
 	// Basic "torch" by setting all-player-visible light.
 	function toggleTorch(token_o, enable)
    	{
 		// Can't do this if there's no image.
-		if (!state.QuickLight.imgsrc) {
-			sendChat("QuickLight API", "Set an image source with !quicklight-set-imgsrc first");
+		if (state.VisionTools.imgsrc.length == 0) {
+			sendChat("VisionTools API", "Set an image source with !mcvis-set-imgsrc first");
 			return;
 		}
 
@@ -70,8 +70,8 @@ var QuickLight = QuickLight || (function() {
 				subtype : "token",
 				pageid : token_o.get("pageid"),
 				layer : "walls",
-				imgsrc : state.QuickLight.imgsrc,
-				name : "QuickLight torch",
+				imgsrc : state.VisionTools.imgsrc,
+				name : "VisionTools torch",
 				left : token_o.get("left"),
 				top : token_o.get("top"),
 				width : token_o.get("width"),
@@ -136,35 +136,35 @@ var QuickLight = QuickLight || (function() {
 	{
 		if (msg.type == "api") {
 			var args = msg.content.split(" ");
-			if (args[0] == "!quicklight-set-imgsrc") {
-				state.QuickLight.imgsrc = args[1];
+			if (args[0] == "!mcvis-set-imgsrc") {
+				state.VisionTools.imgsrc = args[1];
 			}
 		}
 	}
 
 	function initialize()
 	{
-		log("-=> QuickLight v" + this_version + " <=-  [" + this_lastUpdate + "]");
+		log("-=> VisionTools v" + this_version + " <=-  [" + this_lastUpdate + "]");
 
 		// Set up the state object.
-		if (!_.has(state, "QuickLight")) {
-			state.QuickLight = {
+		if (!_.has(state, "VisionTools")) {
+			state.VisionTools = {
 				imgsrc : "",
 				torches : {}
 			};
 		}
 
 		if (this_verbose) {
-			if (state.QuickLight.imgsrc) {
-				log("QuickLight imgsrc: " + state.QuickLight.imgsrc);
+			if (state.VisionTools.imgsrc) {
+				log("VisionTools imgsrc: " + state.VisionTools.imgsrc);
 			}
 			else {
-				log("QuickLight imgsrc not set, use !quicklight-set-imgsrc <URL>");
+				log("VisionTools imgsrc not set, use !mcvis-set-imgsrc <URL>");
 			}
 		}
 
 		// DEBUG: start fresh on torches each time
-		// state.QuickLight.torches = {};
+		// state.VisionTools.torches = {};
 
 		// Set up the event listeners.
 		on("change:graphic:statusmarkers", onYellowMarker);
