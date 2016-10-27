@@ -2,11 +2,142 @@ var VisionTools = VisionTools || (function() {
 	"use strict";
 
 	// Version Number
-	var this_version = 0.4;
+	var this_version = 0.5;
 	// Date: (Subtract 1 from the month component)
-	var this_lastUpdate = new Date(2016, 9, 26, 23, 48);
+	var this_lastUpdate = new Date(2016, 9, 27, 0, 20);
 	// Verbose (print messages)
 	var this_verbose = false;
+	
+	function setVision(lowLightVision, darkRange, charId)
+	{
+		// Halve DV if LLV present, since R20 doubles that, too.
+		darkRange = lowLightVision ? Math.floor(darkRange / 2) : darkRange;
+
+		var toks = findObjs({
+			_type : "graphic",
+			_subtype : "token",
+			represents : charId,
+		});
+		_.each(toks, function(tok){
+			tok.set({
+				light_radius : darkRange > 0 ? darkRange : "",
+				light_dimradius : "",
+				light_otherplayers : false,
+				light_angle : "360",
+				light_hassight : true,
+				light_multiplier : (lowLightVision ? 2 : 1)
+			});
+		});
+	}
+
+	// Obtain a character's vision from a Character object, and see if there are
+	// special vision modes that need to be incorporated.
+	function updateCharacterVision(char)
+	{
+		//log ("Checking vis for " + char.get("name"));
+
+		// ID of the character
+		var charId = char.get("_id");
+
+		// Vision regexes
+		var darkvision1_re = /darkvision\s*\(\s*(\d+)\s*(ft|'|)\s*\)\s*/;
+		var darkvision2_re = /darkvision\s*(\d+)/;
+		var lowlight1_re = /low-light\s*vision|lowlight\s*vision/;
+
+		// Get the vision attribute.
+		// We don't have the ID, so we have to get "all" of them.
+		// We could assume just one is returned, but we'll pretend there could be
+		// more (or zero, which is a possibility that is more likely).
+		var visionAttrs = findObjs({
+			_type : "attribute",
+			_characterid : charId,
+			name : "vision"
+		});
+
+		_.each(visionAttrs, function(attr) {
+
+			var visions = attr.get("current").toLowerCase().split(",");
+			var dv = 0;
+			var llv = 0;
+
+			_.each(visions, function(vis) {
+
+				var mr = vis.match(darkvision1_re);
+				if (mr) {
+					dv = mr[1];
+				}
+
+				mr = vis.match(darkvision2_re);
+				if (mr) {
+					dv = mr[1];
+				}
+
+				mr = vis.match(lowlight1_re);
+				if (mr) {
+					llv = 1;
+				}
+			});
+
+			setVision(llv, dv, charId);
+		});
+	};
+
+	// Update the vision for a token.
+	function updateTokenVision(obj)
+	{
+		var represents = obj.get("represents");
+
+		if (represents) {
+			var characters = findObjs({
+				_id : represents,
+				_type : "character"
+			});
+
+			var char = getObj('character', represents);
+			//log("Update vision for token of ", + char.get("name"));
+			updateCharacterVision(char);
+		}
+	};
+
+	// Handle an attribute [vision] changing.
+	function onCharacterChanged(obj)
+	{
+		var charId = obj.get("_characterid");
+
+		if (obj.get("name") === "vision" && charId) {
+			var characters = findObjs({
+				_id : charId
+			});
+
+			var char = getObj('character', charId);
+			//log("Vision changed for " + char.get("name"));
+			updateCharacterVision(char);
+		}
+	};
+
+	// Change Page
+	function onPlayerPageChanged(obj, prev)
+	{
+		// The page ID of the object seems to be bad.
+		var pageId = Campaign().get("playerpageid");
+		// Update the obj reference.
+		obj = getObj("page", pageId);
+
+		//log("Player page changed, id: " + obj.id);
+
+		// Get all the tokens on the page and update their vision.
+		var tokens = findObjs({
+			_type : "graphic",
+			_subtype : "token",
+			_pageid : obj.get("_id")
+		});
+
+		//log("Page: " + obj.get("name") + ", Tokens: " + tokens.length);
+
+		_.each(tokens, function(token){
+			updateTokenVision(token);
+		});
+	}
 
 	// Find the torch token corresponding to the specified token object.
 	function findTorch(token_o)
@@ -53,7 +184,7 @@ var VisionTools = VisionTools || (function() {
 
 	// Basic "torch" by setting all-player-visible light.
 	function toggleTorch(token_o, enable)
-   	{
+	{
 		// Can't do this if there's no image.
 		if (state.VisionTools.imgsrc.length == 0) {
 			sendChat("VisionTools API", "Set an image source with !mcvis-set-imgsrc first");
@@ -85,7 +216,7 @@ var VisionTools = VisionTools || (function() {
 			});
 
 			// Register the torch.
-			registerTorch(token_o, torch);            
+			registerTorch(token_o, torch);
 		}
 		else {
 			// Unregister the torch.
@@ -123,7 +254,7 @@ var VisionTools = VisionTools || (function() {
 					top : obj.get("top")
 				});
 			}
-		}          
+		}
 	};
 
 	function onTokenDestroy(obj)
@@ -155,7 +286,7 @@ var VisionTools = VisionTools || (function() {
 		}
 
 		if (this_verbose) {
-			if (state.VisionTools.imgsrc) {
+			if (state.VisionTools.imgsrc.length > 0) {
 				log("VisionTools imgsrc: " + state.VisionTools.imgsrc);
 			}
 			else {
@@ -163,15 +294,27 @@ var VisionTools = VisionTools || (function() {
 			}
 		}
 
-		// DEBUG: start fresh on torches each time
-		// state.VisionTools.torches = {};
-
 		// Set up the event listeners.
+		
+		// Quick light
 		on("change:graphic:statusmarkers", onYellowMarker);
 		on("change:graphic:left", onTokenMove);
 		on("change:graphic:top", onTokenMove);
 		on("destroy:graphic", onTokenDestroy);
 		on("chat:message", onChatMessage);
+
+		// Auto Vision
+		on("change:attribute:current", onCharacterChanged);
+		on("change:campaign:playerpageid", onPlayerPageChanged);
+		on("add:token", updateTokenVision);
+
+		// Now check for existing things on the current page.
+		// No way to get the GM page, but we'll let the player page suffice.
+		var playerPageId = Campaign().get("playerpageid");
+		var playerPage = getObj("page", playerPageId);
+		// (We actually determine the page in the function, but we'll pretend we
+		// don't.)
+		onPlayerPageChanged(playerPage);
 	};
 
 	// Initialize.
