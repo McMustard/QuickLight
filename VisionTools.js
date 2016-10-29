@@ -20,6 +20,7 @@ var VisionTools = VisionTools || (function() {
 			_subtype : "token",
 			represents : charId,
 		});
+		return toks;
 	}
 
 	// Return the character that the specified token represents.
