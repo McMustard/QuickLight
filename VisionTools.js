@@ -2,39 +2,159 @@ var VisionTools = VisionTools || (function() {
 	"use strict";
 
 	// Version Number
-	var this_version = 0.5;
+	var this_version = 0.6;
 	// Date: (Subtract 1 from the month component)
-	var this_lastUpdate = new Date(2016, 9, 27, 0, 20);
+	var this_lastUpdate = new Date(2016, 9, 29, 1, 3);
 	// Verbose (print messages)
 	var this_verbose = false;
-	
-	function setVision(lowLightVision, darkRange, charId)
-	{
-		// Halve DV if LLV present, since R20 doubles that, too.
-		darkRange = lowLightVision ? Math.floor(darkRange / 2) : darkRange;
 
+	//
+	// General Functions
+
+	// Return a collection of tokens for the specified character.
+	//     charId: character object ID
+	function tokensFor(charId)
+	{
 		var toks = findObjs({
 			_type : "graphic",
 			_subtype : "token",
 			represents : charId,
 		});
-		_.each(toks, function(tok){
-			tok.set({
-				light_radius : darkRange > 0 ? darkRange : "",
-				light_dimradius : "",
-				light_otherplayers : false,
-				light_angle : "360",
-				light_hassight : true,
-				light_multiplier : (lowLightVision ? 2 : 1)
-			});
+	}
+
+	// Return the character that the specified token represents.
+	//     token: Roll20 token object
+	function characterFor(token)
+	{
+		var represents = token.get("represents");
+		return getObj("character", represents);
+	}
+
+	// Find the torch token corresponding to the specified token.
+	//     token: Roll20 token object
+	function findTorch(token)
+	{
+		// Search for the object in the state object.
+		var torch = state.VisionTools.torches[token.id];
+		return torch;
+	}
+
+	// Set the vision of a token.
+	//     token: Roll20 token object
+	//     llv: low-light vision flag
+	//     dv: darkvision range, feet
+	function setVision(token, llv, dv)
+	{
+		// Halve DV if LLV present, since Roll20 doubles that (as any
+		// other light source).
+		dv = llv ? Math.floor(dv / 2) : dv;
+
+		token.set({
+			light_radius : dv > 0 ? dv : "",
+			light_dimradius : "",
+			light_otherplayers : false,
+			light_angle : "360",
+			light_hassight : true,
+			light_multiplier : (llv ? 2 : 1)
 		});
 	}
 
-	// Obtain a character's vision from a Character object, and see if there are
-	// special vision modes that need to be incorporated.
-	function updateCharacterVision(char)
+	// Register a torch so it can be removed later.
+	//     token: Roll20 token object
+	//     torch: torch object
+	function registerTorch(token, torch)
 	{
-		//log ("Checking vis for " + char.get("name"));
+		// If there is an existing torch entry, delete the old token.
+		var torch = state.VisionTools.torches[token.id];
+		if (torch) {
+			var oldTorch = getObj("graphic", torch.id);
+			log("registerTorch: removing old torch w ID: " + torch.id);
+			if (oldTorch) { oldTorch.remove(); }
+		}
+
+		// Present or not, we're going to replace the entry.
+		state.VisionTools.torches[token.id] = {
+			// ID of the torch object
+			id : torch.id,
+			// ID of the torch's owner
+			owner : token.id
+		};
+
+		log("registerTorch(" + token.id + ", " + torch.id + ")" );
+	}
+
+	// Unregister a torch.
+	//     token: Roll20 token object
+	//     torch: torch object
+	function unregisterTorch(token)
+	{
+		log("unregisterTorch: " + token.id);
+		var torch = findTorch(token);
+		if (torch) {
+			log("deleting torch token");
+			var torch = getObj("graphic", torch.id);
+			torch.remove();
+		}
+		delete state.VisionTools.torches[token.id];
+	}
+
+	// Basic "torch" by setting all-player-visible light.
+	//     token: Roll20 token object
+	//     enable: turn on or off the torch corresponding to 'token'
+	function toggleTorch(token, enable)
+	{
+		// Can't do this if there's no image.
+		if (state.VisionTools.imgsrc.length == 0) {
+			sendChat("VisionTools API", "Set an image source with !mcvis-set-imgsrc first");
+			return;
+		}
+
+		var torch = findTorch(token);
+
+		log("toggleTorch: " + token.id + ", en: " + enable);
+
+		// If we're turning on a light, make a new token.
+		if (enable) {
+			var torch = createObj("graphic", {
+				subtype : "token",
+				pageid : token.get("pageid"),
+				layer : "walls",
+				imgsrc : state.VisionTools.imgsrc,
+				name : "VisionTools torch",
+				left : token.get("left"),
+				top : token.get("top"),
+				width : token.get("width"),
+				height : token.get("height"),
+				// DO NOT SET gmnotes in createObj
+				aura1_radius : 40,
+				auro1_color : "#fff99",
+				light_radius : 40,
+				light_dimradius : 20,
+				light_otherplayers : true
+			});
+
+			// Register the torch.
+			registerTorch(token, torch);
+		}
+		else {
+			// Unregister the torch.
+			unregisterTorch(token);
+		}
+
+	}
+
+	//
+	// Specific Event Handlers
+	
+	// Obtain a character's vision from a Character object, and see if
+	// there are special vision modes that need to be incorporated.
+	//     char: Roll20 character object
+	function onCharacterVisionChanged(char)
+	{
+		if (!char) { return; }
+
+		log("onCharacterVisionChanged(" + char + ")");
+		log("Checking vis for " + char.get("name"));
 
 		// ID of the character
 		var charId = char.get("_id");
@@ -78,42 +198,28 @@ var VisionTools = VisionTools || (function() {
 				}
 			});
 
-			setVision(llv, dv, charId);
-		});
-	};
-
-	// Update the vision for a token.
-	function updateTokenVision(obj)
-	{
-		var represents = obj.get("represents");
-
-		if (represents) {
-			var characters = findObjs({
-				_id : represents,
-				_type : "character"
+			_.each(tokensFor(charId), function(token) {
+				setVision(token, llv, dv);
 			});
+		});
+	}
 
-			var char = getObj('character', represents);
-			//log("Update vision for token of ", + char.get("name"));
-			updateCharacterVision(char);
-		}
-	};
+	//
+	// Roll20 Event Handlers
 
 	// Handle an attribute [vision] changing.
+	//     obj: Roll20 character object
 	function onCharacterChanged(obj)
 	{
 		var charId = obj.get("_characterid");
 
+		// If the vision changed, update the token(s)
 		if (obj.get("name") === "vision" && charId) {
-			var characters = findObjs({
-				_id : charId
-			});
 
-			var char = getObj('character', charId);
 			//log("Vision changed for " + char.get("name"));
-			updateCharacterVision(char);
+			onCharacterVisionChanged(obj);
 		}
-	};
+	}
 
 	// Change Page
 	function onPlayerPageChanged(obj, prev)
@@ -135,98 +241,12 @@ var VisionTools = VisionTools || (function() {
 		//log("Page: " + obj.get("name") + ", Tokens: " + tokens.length);
 
 		_.each(tokens, function(token){
-			updateTokenVision(token);
+			onCharacterVisionChanged(characterFor(token));
 		});
 	}
 
-	// Find the torch token corresponding to the specified token object.
-	function findTorch(token_o)
-	{
-		// Search for the object in the state object.
-		var torch = state.VisionTools.torches[token_o.id];
-		return torch;
-	};
-
-	// Register a torch so it can be removed later.
-	function registerTorch(token_o, torch_o)
-	{
-		// If there is an existing torch entry, delete the old token.
-		var torch = state.VisionTools.torches[token_o.id];
-		if (torch) {
-			var oldTorch_o = getObj("graphic", torch.id);
-			log("registerTorch: removing old torch w ID: " + torch.id);
-			if (oldTorch_o) { oldTorch_o.remove(); }
-		}
-
-		// Present or not, we're going to replace the entry.
-		state.VisionTools.torches[token_o.id] = {
-			// ID of the torch object
-			id : torch_o.id,
-			// ID of the torch's owner
-			owner : token_o.id
-		};
-
-		log("registerTorch(" + token_o.id + ", " + torch_o.id + ")" );
-	};
-
-	// Unregister a torch.
-	function unregisterTorch(token_o)
-	{
-		log("unregisterTorch: " + token_o.id);
-		var torch = findTorch(token_o);
-		if (torch) {
-			log("deleting torch token");
-			var torch_o = getObj("graphic", torch.id);
-			torch_o.remove();
-		}
-		delete state.VisionTools.torches[token_o.id];
-	};
-
-	// Basic "torch" by setting all-player-visible light.
-	function toggleTorch(token_o, enable)
-	{
-		// Can't do this if there's no image.
-		if (state.VisionTools.imgsrc.length == 0) {
-			sendChat("VisionTools API", "Set an image source with !mcvis-set-imgsrc first");
-			return;
-		}
-
-		var torch = findTorch(token_o);
-
-		log("toggleTorch: " + token_o.id + ", en: " + enable);
-
-		// If we're turning on a light, make a new token.
-		if (enable) {
-			var torch = createObj("graphic", {
-				subtype : "token",
-				pageid : token_o.get("pageid"),
-				layer : "walls",
-				imgsrc : state.VisionTools.imgsrc,
-				name : "VisionTools torch",
-				left : token_o.get("left"),
-				top : token_o.get("top"),
-				width : token_o.get("width"),
-				height : token_o.get("height"),
-				// DO NOT SET gmnotes in createObj
-				aura1_radius : 40,
-				auro1_color : "#fff99",
-				light_radius : 40,
-				light_dimradius : 20,
-				light_otherplayers : true
-			});
-
-			// Register the torch.
-			registerTorch(token_o, torch);
-		}
-		else {
-			// Unregister the torch.
-			unregisterTorch(token_o);
-		}
-
-	};
-
 	// Hanhdle yellow marker to toggle the light source.
-	function onYellowMarker(obj, prev)
+	function onTokenStatus(obj, prev)
 	{
 		//log("status changed");
 		var yellowIsOn = obj.get("status_yellow");
@@ -240,28 +260,28 @@ var VisionTools = VisionTools || (function() {
 			//log("turning light off");
 			toggleTorch(obj, false);
 		}
-	};
+	}
 
 	function onTokenMove(obj, prev)
 	{
 		// If the token has a torch, move it as well.
 		var torch = findTorch(obj);
 		if (torch) {
-			var torch_o = getObj("graphic", torch.id);
-			if (torch_o) {
-				torch_o.set({
+			var torch = getObj("graphic", torch.id);
+			if (torch) {
+				torch.set({
 					left : obj.get("left"),
 					top : obj.get("top")
 				});
 			}
 		}
-	};
+	}
 
 	function onTokenDestroy(obj)
 	{
 		// If the token has a torch, unregister it.
 		unregisterTorch(obj);
-	};
+	}
 
 	function onChatMessage(msg)
 	{
@@ -297,7 +317,7 @@ var VisionTools = VisionTools || (function() {
 		// Set up the event listeners.
 		
 		// Quick light
-		on("change:graphic:statusmarkers", onYellowMarker);
+		on("change:graphic:statusmarkers", onTokenStatus);
 		on("change:graphic:left", onTokenMove);
 		on("change:graphic:top", onTokenMove);
 		on("destroy:graphic", onTokenDestroy);
@@ -306,7 +326,7 @@ var VisionTools = VisionTools || (function() {
 		// Auto Vision
 		on("change:attribute:current", onCharacterChanged);
 		on("change:campaign:playerpageid", onPlayerPageChanged);
-		on("add:token", updateTokenVision);
+		on("add:token", onCharacterVisionChanged);
 
 		// Now check for existing things on the current page.
 		// No way to get the GM page, but we'll let the player page suffice.
@@ -315,7 +335,7 @@ var VisionTools = VisionTools || (function() {
 		// (We actually determine the page in the function, but we'll pretend we
 		// don't.)
 		onPlayerPageChanged(playerPage);
-	};
+	}
 
 	// Initialize.
 	on("ready", initialize);
