@@ -2,11 +2,15 @@ var VisionTools = VisionTools || (function() {
 	"use strict";
 
 	// Version Number
-	var this_version = 0.6;
+	var this_version = 0.7;
 	// Date: (Subtract 1 from the month component)
-	var this_lastUpdate = new Date(2016, 9, 29, 1, 3);
+	var this_lastUpdate = new Date(2016, 9, 29, 3, 02);
 	// Verbose (print messages)
 	var this_verbose = false;
+	// Auto-size "small" and smaller tokens below unit size
+	var this_enableSubunitTokens = true;
+	// Grid size
+	var GRID_SIZE = 70;
 
 	//
 	// General Functions
@@ -57,6 +61,17 @@ var VisionTools = VisionTools || (function() {
 			light_angle : "360",
 			light_hassight : true,
 			light_multiplier : (llv ? 2 : 1)
+		});
+	}
+
+	// Set the size of a token.
+	//     token: Roll20 token object
+	//     size: x and y dimensions
+	function setSize(token, size)
+	{
+		token.set({
+			width : size,
+			height : size
 		});
 	}
 
@@ -205,6 +220,65 @@ var VisionTools = VisionTools || (function() {
 		});
 	}
 
+	// Obtain a character's size from a Character object, and set its token sizes.
+	//     character: Roll20 character object
+	function onCharacterSizeChanged(character)
+	{
+		if (!character) { return; }
+
+		// Synonym
+		var charId = character.id;
+
+		// Get the size attribute.
+		// We don't have the ID, so we have to get "all" of them.
+		// We could assume just one is returned, but we'll pretend there could be
+		// more (or zero, which is a possibility that is more likely).
+		var sizeAttrs = findObjs({
+			_type : "attribute",
+			_characterid : charId,
+			name : "size"
+		});
+
+		_.each(sizeAttrs, function(attr) {
+			//log("Size is " + attr.get("current"));
+			var size = parseInt(attr.get("current"), 10);
+			var dimension = 0;
+
+			switch (size) {
+				// Any small or smaller can be 1/4x or 1x.
+				case 8: // fine
+				case 4: // diminutive
+				case 2: // tiny
+				case 1: // small
+					dimension = this_enableSubunitTokens ? GRID_SIZE / 2 : GRID_SIZE;
+					break;
+				case 0: // medium
+					dimension = GRID_SIZE;
+					break;
+				case -1: // large
+					dimension = GRID_SIZE * 2;
+					break;
+				case -2: // huge
+					dimension = GRID_SIZE * 3;
+					break;
+				case -4: // gargantuan
+					dimension = GRID_SIZE * 4;
+					break;
+				case -8: // colossal
+					dimension = GRID_SIZE * 5;
+					break;
+			}
+
+			if (dimension > 0) {
+				var toks = tokensFor(charId);
+				log("tokens for " + charId + " count is " + 0);//toks.length);
+				_.each(tokensFor(charId), function(token) {
+					setSize(token, dimension);
+				});
+			}
+		});
+	}
+
 	//
 	// Roll20 Event Handlers
 
@@ -212,13 +286,15 @@ var VisionTools = VisionTools || (function() {
 	//     obj: Roll20 character object
 	function onCharacterChanged(obj)
 	{
-		var charId = obj.get("_characterid");
-
 		// If the vision changed, update the token(s)
-		if (obj.get("name") === "vision" && charId) {
-
-			//log("Vision changed for " + char.get("name"));
-			onCharacterVisionChanged(obj);
+		var character = getObj("character", obj.get("_characterid"));
+		if (obj.get("name") === "vision") {
+			//log("Vision changed for " + character.get("name"));
+			onCharacterVisionChanged(character);
+		}
+		else if (obj.get("name") === "size") {
+			//log("Size changed for " + character.get("name"));
+			onCharacterSizeChanged(character);
 		}
 	}
 
@@ -278,6 +354,13 @@ var VisionTools = VisionTools || (function() {
 		}
 	}
 
+	function onTokenAdded(obj)
+	{
+		var character = getObj("character", obj.get("represents"));
+		onCharacterVisionChanged(character);
+		onCharacterSizeChanged(character);
+	}
+
 	function onTokenDestroy(obj)
 	{
 		// If the token has a torch, unregister it.
@@ -327,7 +410,7 @@ var VisionTools = VisionTools || (function() {
 		// Auto Vision
 		on("change:attribute:current", onCharacterChanged);
 		on("change:campaign:playerpageid", onPlayerPageChanged);
-		on("add:token", onCharacterVisionChanged);
+		on("add:token", onTokenAdded);
 
 		// Now check for existing things on the current page.
 		// No way to get the GM page, but we'll let the player page suffice.
