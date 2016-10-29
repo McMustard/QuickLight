@@ -2,12 +2,12 @@ var VisionTools = VisionTools || (function() {
 	"use strict";
 
 	// Version Number
-	var this_version = 0.7;
+	var this_version = 0.8;
 	// Date: (Subtract 1 from the month component)
-	var this_lastUpdate = new Date(2016, 9, 29, 3, 02);
+	var this_lastUpdate = new Date(2016, 9, 29, 3, 14);
 	// Verbose (print messages)
 	var this_verbose = false;
-	// Auto-size "small" and smaller tokens below unit size
+	// Auto-size "tiny" and smaller tokens below unit size
 	var this_enableSubunitTokens = true;
 	// Grid size
 	var GRID_SIZE = 70;
@@ -245,12 +245,14 @@ var VisionTools = VisionTools || (function() {
 			var dimension = 0;
 
 			switch (size) {
-				// Any small or smaller can be 1/4x or 1x.
+				// Any tiny or smaller can be 1/4x or 1x.
 				case 8: // fine
 				case 4: // diminutive
 				case 2: // tiny
-				case 1: // small
 					dimension = this_enableSubunitTokens ? GRID_SIZE / 2 : GRID_SIZE;
+					break
+				case 1: // small
+					dimension = GRID_SIZE;
 					break;
 				case 0: // medium
 					dimension = GRID_SIZE;
@@ -271,7 +273,6 @@ var VisionTools = VisionTools || (function() {
 
 			if (dimension > 0) {
 				var toks = tokensFor(charId);
-				log("tokens for " + charId + " count is " + 0);//toks.length);
 				_.each(tokensFor(charId), function(token) {
 					setSize(token, dimension);
 				});
