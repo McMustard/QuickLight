@@ -2,9 +2,9 @@ var VisionTools = VisionTools || (function() {
 	"use strict";
 
 	// Version Number
-	var this_version = 0.8;
+	var this_version = 0.9;
 	// Date: (Subtract 1 from the month component)
-	var this_lastUpdate = new Date(2016, 9, 29, 3, 14);
+	var this_lastUpdate = new Date(2016, 10, 2, 0, 34);
 	// Verbose (print messages)
 	var this_verbose = false;
 	// Auto-size "tiny" and smaller tokens below unit size
@@ -77,16 +77,37 @@ var VisionTools = VisionTools || (function() {
 
 	// Register a torch so it can be removed later.
 	//     token: Roll20 token object
-	//     torch: torch object
-	function registerTorch(token, torch)
+	function registerTorch(token)
 	{
-		// If there is an existing torch entry, delete the old token.
-		var torch = state.VisionTools.torches[token.id];
-		if (torch) {
-			var oldTorch = getObj("graphic", torch.id);
-			log("registerTorch: removing old torch w ID: " + torch.id);
-			if (oldTorch) { oldTorch.remove(); }
+		if (this_verbose) {
+			log("registerTorch(" + token.id + ")");
 		}
+
+		// If there is an existing torch entry, delete the old token.
+		var torch = findTorch(token);
+		if (torch) {
+			var oldTorchToken = getObj("graphic", torch.id);
+			if (oldTorchToken) { oldTorchToken.remove(); }
+		}
+
+		// Create a new torch.
+		torch = createObj("graphic", {
+			subtype : "token",
+			pageid : token.get("pageid"),
+			layer : "walls",
+			imgsrc : state.VisionTools.imgsrc,
+			name : "VisionTools torch",
+			left : token.get("left"),
+			top : token.get("top"),
+			width : token.get("width"),
+			height : token.get("height"),
+			// DO NOT SET gmnotes in createObj
+			aura1_radius : 40,
+			auro1_color : "#fff99",
+			light_radius : 40,
+			light_dimradius : 20,
+			light_otherplayers : true
+		});
 
 		// Present or not, we're going to replace the entry.
 		state.VisionTools.torches[token.id] = {
@@ -95,22 +116,25 @@ var VisionTools = VisionTools || (function() {
 			// ID of the torch's owner
 			owner : token.id
 		};
-
-		log("registerTorch(" + token.id + ", " + torch.id + ")" );
 	}
 
 	// Unregister a torch.
 	//     token: Roll20 token object
-	//     torch: torch object
 	function unregisterTorch(token)
 	{
-		log("unregisterTorch: " + token.id);
+		if (this_verbose) {
+			log("unregisterTorch(" + token.id + ")" );
+		}
+
 		var torch = findTorch(token);
 		if (torch) {
-			log("deleting torch token");
-			var torch = getObj("graphic", torch.id);
-			torch.remove();
+			if (this_verbose) {
+				log("deleting torch token");
+			}
+			var oldTorchToken = getObj("graphic", torch.id);
+			if (oldTorchToken) { oldTorchToken.remove(); }
 		}
+
 		delete state.VisionTools.torches[token.id];
 	}
 
@@ -125,38 +149,19 @@ var VisionTools = VisionTools || (function() {
 			return;
 		}
 
-		var torch = findTorch(token);
-
-		log("toggleTorch: " + token.id + ", en: " + enable);
+		if (this_verbose) {
+			log("toggleTorch: " + token.id + ", en: " + enable);
+		}
 
 		// If we're turning on a light, make a new token.
 		if (enable) {
-			var torch = createObj("graphic", {
-				subtype : "token",
-				pageid : token.get("pageid"),
-				layer : "walls",
-				imgsrc : state.VisionTools.imgsrc,
-				name : "VisionTools torch",
-				left : token.get("left"),
-				top : token.get("top"),
-				width : token.get("width"),
-				height : token.get("height"),
-				// DO NOT SET gmnotes in createObj
-				aura1_radius : 40,
-				auro1_color : "#fff99",
-				light_radius : 40,
-				light_dimradius : 20,
-				light_otherplayers : true
-			});
-
-			// Register the torch.
-			registerTorch(token, torch);
+			// Create and register a torch.
+			registerTorch(token);
 		}
 		else {
-			// Unregister the torch.
+			// Unregister a torch.
 			unregisterTorch(token);
 		}
-
 	}
 
 	//
@@ -169,8 +174,10 @@ var VisionTools = VisionTools || (function() {
 	{
 		if (!char) { return; }
 
-		log("onCharacterVisionChanged(" + char + ")");
-		log("Checking vis for " + char.get("name"));
+		if (this_verbose) {
+			log("onCharacterVisionChanged(" + char + ")");
+			log("Checking vis for " + char.get("name"));
+		}
 
 		// ID of the character
 		var charId = char.get("_id");
@@ -273,6 +280,7 @@ var VisionTools = VisionTools || (function() {
 
 			if (dimension > 0) {
 				var toks = tokensFor(charId);
+				log("tokens for " + charId + " count is " + 0);//toks.length);
 				_.each(tokensFor(charId), function(token) {
 					setSize(token, dimension);
 				});
